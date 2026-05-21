@@ -80,6 +80,34 @@ Detects platform, downloads Node/Bun if missing, clones repo, registers service.
 5. Quota tracker increments counters; if rate-limit JSON detected: agent → `paused`, response → "Limit hit at HH:MM, resuming HH:MM."
 6. On schedule timer fire: agent → `idle`, ready for next prompt.
 
+## Expanded requirements (added 2026-05-21)
+
+### Overseer agent (v0)
+A dedicated always-on agent of role `overseer` runs in the background separate from worker agents. Its job:
+- Periodically run `claude` in code-review mode against any active worktree (look for uncommitted changes, syntax errors, TODOs, security smells).
+- Watch worker agents' message history; flag anomalies (stuck >30 min, repeated errors, scope drift from original prompt).
+- Send a daily digest to the operator on Telegram (configurable time, default 18:00 EET).
+- One overseer per RemoteCode instance; cannot be `/kill`'d (just paused).
+
+### Voice messages (v0.5)
+Accept Telegram voice notes (`message.voice`):
+- Download `.oga` via Bot API.
+- Transcribe via OpenAI Whisper API (operator already has key) or local `whisper.cpp` if `OPENAI_API_KEY` absent.
+- Treat transcript as a `/run` to the default agent (or parse leading `/cmd` prefix in transcript).
+
+### Auto-start on boot (v1, but design v0 for it)
+- Windows: `nssm install RemoteCode "C:\Program Files\RemoteCode\remote-code.exe"` registers as Windows service.
+- macOS: `~/Library/LaunchAgents/com.remotecode.daemon.plist` with `RunAtLoad=true` + `KeepAlive=true`.
+- Linux: `~/.config/systemd/user/remote-code.service` with `Restart=always` + `WantedBy=default.target`.
+- Installer scripts (`scripts/install.{sh,ps1}`) handle registration.
+
+### Always-online resilience (v0)
+- Daemon recovers from any single-agent crash without restarting the bot.
+- Per-agent watchdog: if subprocess dies, mark agent `crashed`, notify Telegram, optionally auto-respawn (configurable).
+- Telegram long-poll has exponential backoff on `getUpdates` errors (network down).
+- SQLite WAL mode + periodic checkpoint so state survives `kill -9`.
+- Health probe at `/health` (HTTP, localhost-only) so external supervisor (systemd `WatchdogSec`) can detect hang.
+
 ## Non-goals (v0)
 
 - Hosted relay (zero-infra design = Telegram only).
