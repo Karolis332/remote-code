@@ -38,14 +38,24 @@ import { snapshot } from "./quota.js";
 // Reply keyboard (sticky bottom) + per-agent inline keyboards
 // ---------------------------------------------------------------------------
 
-/** Sticky bottom keyboard — shows after /start, /pair, and any reply.
- *  Buttons send their literal text, which is just the command name. */
+/** Sticky bottom keyboard — labels are plain text (no slash) so they look like
+ *  buttons; the message handler routes the literal text back to the right
+ *  command handler. Mixing emoji + a leading "/" breaks Telegram's
+ *  bot_command entity detection, so we avoid that. */
 const MAIN_KEYBOARD = Markup.keyboard([
-  ["🤖 /agents", "⚡ /status"],
-  ["📊 /quota", "❓ /help"],
+  ["🤖 Agents", "⚡ Status"],
+  ["📊 Quota", "❓ Help"],
 ])
   .resize()
   .persistent();
+
+/** Map: chip button text → name of the handlers.* function to invoke. */
+const CHIP_ROUTES: Record<string, "agents" | "status" | "quota" | "help"> = {
+  "🤖 Agents": "agents",
+  "⚡ Status": "status",
+  "📊 Quota": "quota",
+  "❓ Help": "help",
+};
 
 /** Inline keyboard attached to each agent row in /agents. */
 function agentInlineKeyboard(agent: AgentRow): ReturnType<typeof Markup.inlineKeyboard> {
@@ -88,7 +98,11 @@ export const TELEGRAM_MAX = 4096;
 const PAGE_BUDGET = TELEGRAM_MAX - 16;
 
 const GENERIC_ERROR = "internal error - check daemon log";
-const NOT_PAIRED_HINT =
+/** Fallback hint for authorized chats that send unrecognized text. */
+const UNKNOWN_INPUT_HINT =
+  "Tap a button or type `/help` for the list of commands.";
+/** Hint for chats that aren't paired yet — sent only by /start in the unauth branch. */
+const PAIRING_HINT =
   "Unpaired. Look at the daemon's console for a 6-char code, then send `/pair <code>`.";
 
 // ---------------------------------------------------------------------------
@@ -678,20 +692,36 @@ export function buildBot(deps: BotDeps): Telegraf {
     await ctx.answerCbQuery("Already running. Use ✕ Kill to stop.");
   });
 
-  // Default text catch-all: if there's a pending /run prompt for this chat,
-  // dispatch the message as the prompt. Otherwise show the help hint.
+  // Default text catch-all. Order of precedence:
+  //  1. /commands  → let telegraf's bot.command handlers fire
+  //  2. chip text  → route to the matching handler
+  //  3. pending /run prompt → dispatch as the prompt
+  //  4. anything else → soft hint
   bot.on("message", async (ctx) => {
     if (!gate(ctx)) return;
     const chatId = ctx.chat.id;
     const msg = ctx.message as { text?: string };
     const text = (msg.text ?? "").trim();
 
-    // 1) Skip if this looks like a command — let the command handlers handle it.
-    if (text.startsWith("/")) return;
-    // 2) Skip empty / non-text (photos, etc).
-    if (!text) return;
+    if (!text) return;             // non-text (photos, etc.)
+    if (text.startsWith("/")) return; // command — handled elsewhere
 
-    // 3) If there's a pending run prompt, dispatch it.
+    // 2) Chip button routing.
+    if (text in CHIP_ROUTES) {
+      const route = CHIP_ROUTES[text]!;
+      try {
+        await handlers[route](deps, ctx as HandlerCtx);
+      } catch (err) {
+        deps.logger.error(
+          { err: String(err), chip: text },
+          "chip route crashed",
+        );
+        await ctx.reply(GENERIC_ERROR).catch(() => {});
+      }
+      return;
+    }
+
+    // 3) Pending /run prompt → dispatch.
     const pending = PENDING_PROMPTS.get(chatId);
     if (pending && pending.expiresAt > Date.now()) {
       PENDING_PROMPTS.delete(chatId);
@@ -700,7 +730,6 @@ export function buildBot(deps: BotDeps): Telegraf {
         await ctx.reply("Agent vanished while you were typing.").catch(() => {});
         return;
       }
-      // Synthesize the args /run would have received.
       const fakeCtx = Object.assign(ctx, {
         args: [agent.name, text],
         payload: `${agent.name} ${text}`,
@@ -716,15 +745,16 @@ export function buildBot(deps: BotDeps): Telegraf {
       }
       return;
     }
-
-    // 4) Expired pending → clean it up.
     if (pending && pending.expiresAt <= Date.now()) {
       PENDING_PROMPTS.delete(chatId);
     }
 
-    await ctx.reply(NOT_PAIRED_HINT, MAIN_KEYBOARD).catch(() => {
-      /* swallow */
-    });
+    // 4) Soft hint — NOT the pairing message (chat is already authorized here).
+    await ctx
+      .reply(UNKNOWN_INPUT_HINT, { parse_mode: "Markdown", ...MAIN_KEYBOARD })
+      .catch(() => {
+        /* swallow */
+      });
   });
 
   return bot;
