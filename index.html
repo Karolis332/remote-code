@@ -1529,16 +1529,16 @@
         v0 ships when the Foreman passes its own review. Join the waitlist for
         first access, a beta key, and the install one-liner.
       </p>
-      <form action="#" method="post" style="display:flex; gap:0.6rem; justify-content:center; flex-wrap:wrap;">
-        <input type="email" required placeholder="your@email" style="
+      <form id="waitlist-form" novalidate style="display:flex; gap:0.6rem; justify-content:center; flex-wrap:wrap;">
+        <input id="waitlist-email" type="email" required placeholder="your@email" autocomplete="email" style="
           font-family: var(--font-mono); font-size: 13px;
           padding: 14px 16px; min-width: 280px;
           background: var(--ink-2); border: 1px solid var(--rule);
           color: var(--paper); outline: none;
         ">
-        <button type="submit" class="btn">Standby for liftoff →</button>
+        <button id="waitlist-submit" type="submit" class="btn">Standby for liftoff →</button>
       </form>
-      <p style="font-size:0.85rem; color:var(--mute); margin-top:1.5rem;">
+      <p id="waitlist-msg" role="status" aria-live="polite" style="font-size:0.92rem; color:var(--mute); margin-top:1.5rem; min-height:1.4em;">
         No newsletter. Just the launch ping. We delete the list after v0 GA.
       </p>
     </div>
@@ -1649,6 +1649,84 @@
       history.pushState(null, '', '#' + id);
     });
   });
+
+  // ----- Waitlist form → Supabase REST insert -----
+  // Anon key is PUBLIC-by-design in Supabase (RLS enforces actual access control).
+  // See docs/WAITLIST-SETUP.md for the SQL migration that creates the table + RLS policy.
+  (function () {
+    const SUPABASE_URL  = 'https://kgtgyenjtugmdqgloxdq.supabase.co';
+    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtndGd5ZW5qdHVnbWRxZ2xveGRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNDA0NTksImV4cCI6MjA4ODcxNjQ1OX0.HCWgqU66fZcoETR0UmW4uPaZJJ3SzXrW9TyvbzfJKfw';
+    const TABLE = 'remotecode_waitlist';
+
+    const form = document.getElementById('waitlist-form');
+    const emailInput = document.getElementById('waitlist-email');
+    const submitBtn = document.getElementById('waitlist-submit');
+    const msg = document.getElementById('waitlist-msg');
+    if (!form || !emailInput || !submitBtn || !msg) return;
+
+    const DEFAULT_MSG = msg.textContent;
+
+    function setMsg(text, kind) {
+      msg.textContent = text;
+      msg.style.color =
+        kind === 'ok'   ? 'var(--telemetry)' :
+        kind === 'err'  ? 'var(--warn)'      :
+                          'var(--mute)';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = (emailInput.value || '').trim();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setMsg('That email looks malformed. Try again.', 'err');
+        emailInput.focus();
+        return;
+      }
+      submitBtn.disabled = true;
+      const originalLabel = submitBtn.textContent;
+      submitBtn.textContent = 'Transmitting…';
+      setMsg('Uplinking…', 'info');
+
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON,
+            'Authorization': `Bearer ${SUPABASE_ANON}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({
+            email,
+            source: 'gh-pages',
+            user_agent: navigator.userAgent.slice(0, 256),
+            referrer: (document.referrer || '').slice(0, 256),
+          }),
+        });
+
+        if (res.status === 201 || res.status === 200 || res.status === 204) {
+          form.reset();
+          setMsg('✓ Locked in. Watch your inbox at liftoff.', 'ok');
+        } else if (res.status === 409) {
+          setMsg('Already on the list. Standby.', 'ok');
+          form.reset();
+        } else {
+          const body = await res.text();
+          console.error('[waitlist] supabase error', res.status, body);
+          setMsg('Transmission failed. Try again in a minute.', 'err');
+        }
+      } catch (err) {
+        console.error('[waitlist] network error', err);
+        setMsg('Network down. Try again in a minute.', 'err');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalLabel;
+        setTimeout(() => {
+          if (msg.style.color === 'var(--mute)') setMsg(DEFAULT_MSG, 'info');
+        }, 12000);
+      }
+    });
+  })();
 </script>
 </body>
 </html>
