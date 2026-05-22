@@ -26,7 +26,9 @@ async function main(): Promise<void> {
   const db = openDB(config.REMOTECODE_DB);
   migrate(db);
 
-  const probe = await probeCli({ bin: config.CLAUDE_BIN });
+  // The runner reads CLAUDE_BIN from process.env; loadConfig already
+  // exported it into the process environment (or defaulted to "claude").
+  const probe = await probeCli();
   if (!probe.installed) {
     logger.error(
       { probe },

@@ -314,24 +314,26 @@ export const handlers = {
         });
     };
 
-    const result = await runPrompt({
-      db: deps.db,
+    const result = await runPrompt(deps.db, {
       agentId: agent.id,
+      cwd: agent.cwd,
       prompt,
-      bin: deps.config.CLAUDE_BIN,
       onChunk,
     });
 
     if (!result.ok) {
-      updateAgentStatus(
-        deps.db,
-        agent.id,
-        result.paused_until ? "paused" : "crashed",
-        result.paused_until ?? null,
-      );
+      // If the runner detected a rate-limit it has already called
+      // pauseUntil(...) which set status='paused' + paused_until. Avoid
+      // overwriting that with 'crashed' in the rate-limit case.
+      if (!result.rateLimit) {
+        updateAgentStatus(deps.db, agent.id, "crashed", null);
+      }
+      const reason = result.rateLimit
+        ? `rate-limited until ${new Date(result.rateLimit.resetAt).toISOString()}`
+        : (result.stderrSnippet || `exit ${result.exitCode ?? "?"}`);
       await sendPaginated(
         ctx,
-        `\`${escapeMd(name)}\` failed:\n${escapeMd(result.error ?? "(no error message)")}`,
+        `\`${escapeMd(name)}\` failed:\n${escapeMd(reason)}`,
       );
       return;
     }
@@ -339,7 +341,7 @@ export const handlers = {
     updateAgentStatus(deps.db, agent.id, "idle");
     await sendPaginated(
       ctx,
-      `\`${escapeMd(name)}\` finished:\n\n${result.output}`,
+      `\`${escapeMd(name)}\` finished:\n\n${result.text}`,
     );
   },
 
