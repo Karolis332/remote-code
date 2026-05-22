@@ -108,6 +108,17 @@ Accept Telegram voice notes (`message.voice`):
 - SQLite WAL mode + periodic checkpoint so state survives `kill -9`.
 - Health probe at `/health` (HTTP, localhost-only) so external supervisor (systemd `WatchdogSec`) can detect hang.
 
+## Account model — BYOK (Bring Your Own Claude)
+
+RemoteCode does **not** resell Anthropic capacity. Users link their own Claude account on the daemon side. The daemon discovers and uses the user's already-installed `claude` CLI (which is authenticated against the user's Pro / Max / API subscription via the Anthropic CLI's own auth store).
+
+Implications:
+- **No LLM cost passthrough.** RemoteCode pricing is a flat tool subscription ($19/mo solo, $49/mo team, $199/mo agency). Compute cost is whatever the user already pays Anthropic.
+- **No API key plumbing in our product.** We never see, store, or proxy the user's Claude credentials.
+- **Each user's rate limits apply.** The quota tracker observes the user's CLI behavior (rate-limit errors, response times) — it doesn't talk to Anthropic billing.
+- **First-run check:** daemon runs `claude --version` and `claude config get` (or current equivalent) to confirm the CLI is installed and authenticated. If not, it directs the user to https://claude.com/code install/login.
+- **Privacy moat:** because we never touch the API key, we cannot exfiltrate it. This is a sales argument for security-conscious users.
+
 ## Non-goals (v0)
 
 - Hosted relay (zero-infra design = Telegram only).
