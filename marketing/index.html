@@ -462,22 +462,57 @@
     align-items: start;
   }
   @media (min-width: 980px) { .arch { grid-template-columns: 1fr 1.3fr; } }
-  pre.ascii {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.45;
-    color: var(--paper-2);
+  /* -------- Architecture SVG diagram -------- */
+  .arch-svg {
+    width: 100%;
+    height: auto;
     background: var(--ink-2);
     border: 1px solid var(--rule);
-    padding: 1.5rem;
-    overflow-x: auto;
-    margin: 0;
-    white-space: pre;
+    padding: 1.25rem;
+    display: block;
   }
-  pre.ascii .a { color: var(--ignition); }
-  pre.ascii .g { color: var(--telemetry); }
-  pre.ascii .w { color: var(--warn); }
-  pre.ascii .m { color: var(--mute); }
+  .arch-svg .stroke-paper  { stroke: var(--paper-2); }
+  .arch-svg .stroke-paper-d{ stroke: var(--mute);    }
+  .arch-svg .stroke-orange { stroke: var(--ignition);}
+  .arch-svg .stroke-green  { stroke: var(--telemetry);}
+  .arch-svg .fill-paper    { fill: var(--paper);     }
+  .arch-svg .fill-paper-2  { fill: var(--paper-2);   }
+  .arch-svg .fill-mute     { fill: var(--mute);      }
+  .arch-svg .fill-orange   { fill: var(--ignition);  }
+  .arch-svg .fill-green    { fill: var(--telemetry); }
+  .arch-svg .fill-warn     { fill: var(--warn);      }
+  .arch-svg .fill-ink      { fill: var(--ink);       }
+  .arch-svg .fill-ink-2    { fill: var(--ink-2);     }
+  .arch-svg text {
+    font-family: var(--font-mono);
+    fill: var(--paper-2);
+    paint-order: stroke;
+  }
+  .arch-svg .label-title  { font-size: 12px; letter-spacing: 0.14em; font-weight: 700; }
+  .arch-svg .label-sub    { font-size: 10px; letter-spacing: 0.08em; }
+  .arch-svg .label-num    { font-size: 9px;  letter-spacing: 0.16em; }
+  .arch-svg .label-tiny   { font-size: 9px;  letter-spacing: 0.04em; }
+  .arch-svg .label-body   { font-size: 10.5px; letter-spacing: 0.02em; }
+  .arch-svg .flow {
+    stroke-dasharray: 6 4;
+    animation: dash 1.4s linear infinite;
+  }
+  .arch-svg .watch {
+    stroke-dasharray: 3 4;
+    opacity: 0.85;
+  }
+  .arch-svg .pulse-dot {
+    transform-origin: center;
+    animation: pulse-svg 2s ease-in-out infinite;
+  }
+  @keyframes dash    { to { stroke-dashoffset: -100; } }
+  @keyframes pulse-svg {
+    0%, 100% { opacity: 1;   transform: scale(1); }
+    50%      { opacity: 0.45; transform: scale(0.7); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .arch-svg .flow, .arch-svg .pulse-dot { animation: none; }
+  }
   .arch-notes h4 {
     font-family: var(--font-mono);
     font-size: 12px;
@@ -1000,26 +1035,242 @@
       </p>
 
       <div class="arch">
-        <pre class="ascii" aria-label="RemoteCode architecture diagram"><span class="m">          ┌─────────────────────────┐</span>
-<span class="m">          │</span>     <span class="a">YOUR PHONE</span>          <span class="m">│</span>
-<span class="m">          │</span>  Telegram chat #2847   <span class="m">│</span>
-<span class="m">          └────────────┬────────────┘</span>
-<span class="m">                       │</span>  <span class="m">Bot API (long-poll)</span>
-<span class="m">                       ▼</span>
-<span class="m">          ┌─────────────────────────┐</span>
-<span class="m">          │</span>  <span class="g">REMOTECODE DAEMON</span>      <span class="m">│</span>
-<span class="m">          │</span>  ┌─ SQLite (state) ─┐  <span class="m">│</span>
-<span class="m">          │</span>  ┌─ Quota tracker ──┐  <span class="m">│</span>
-<span class="m">          │</span>  ┌─ Agent pool ─────┐  <span class="m">│</span>
-<span class="m">          └────────┬─────┬─────┬────┘</span>
-<span class="m">                   │</span>     <span class="m">│</span>     <span class="m">│</span>
-<span class="m">    ┌──────────────┘</span>     <span class="m">│</span>     <span class="m">└──────────────┐</span>
-<span class="m">    ▼</span>                    <span class="m">▼</span>                    <span class="m">▼</span>
-<span class="a">agent#1</span>              <span class="a">agent#2</span>              <span class="w">foreman</span>
-claude --print       claude --print       claude --print
-cwd=~/projA          cwd=~/projB          <span class="g">always-on supervisor</span>
-<span class="m">────────────────────────────────────────────────────────</span>
-<span class="m">BYOK · your Anthropic account · no key plumbing</span></pre>
+        <svg class="arch-svg" viewBox="0 0 800 820" xmlns="http://www.w3.org/2000/svg"
+             aria-label="RemoteCode architecture: phone → Telegram → daemon → agent fleet with always-on Foreman supervisor">
+          <defs>
+            <!-- Arrowheads -->
+            <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--ignition)" />
+            </marker>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--telemetry)" />
+            </marker>
+            <marker id="arrow-paper" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--paper-2)" />
+            </marker>
+            <!-- Engineer's dot-grid background -->
+            <pattern id="dotgrid" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="0.7" fill="var(--rule-warm)" />
+            </pattern>
+            <!-- Frame corner brackets -->
+            <symbol id="corner" overflow="visible">
+              <path d="M0,8 L0,0 L8,0" fill="none" stroke="var(--paper-2)" stroke-width="1.25" />
+            </symbol>
+          </defs>
+
+          <!-- Engineering dot-grid backdrop -->
+          <rect x="0" y="0" width="800" height="820" fill="url(#dotgrid)" opacity="0.55"/>
+
+          <!-- ===================== DRAWING FRAME ===================== -->
+          <use href="#corner" x="14"   y="14"  />
+          <use href="#corner" x="786"  y="14"  transform="rotate(90 786 14)"/>
+          <use href="#corner" x="14"   y="806" transform="rotate(-90 14 806)"/>
+          <use href="#corner" x="786"  y="806" transform="rotate(180 786 806)"/>
+
+          <!-- Title block top-left -->
+          <text x="32" y="36" class="label-num fill-mute">DWG-001 · REMOTECODE TOPOLOGY · 1:1 · v0</text>
+          <!-- Compass / orientation top-right -->
+          <g transform="translate(740 36)">
+            <text x="0" y="0" text-anchor="end" class="label-num fill-mute">N ↑ · BYOK · MIT (core)</text>
+          </g>
+
+          <!-- ===================== 01 · PHONE ===================== -->
+          <g transform="translate(340 60)">
+            <!-- Device outline -->
+            <rect x="0" y="0" width="120" height="180" rx="14" ry="14"
+                  fill="var(--ink)" class="stroke-paper" stroke-width="1.25"/>
+            <!-- Screen inner -->
+            <rect x="10" y="20" width="100" height="140" rx="3" ry="3"
+                  fill="var(--ink-2)" class="stroke-paper-d" stroke-width="0.75" stroke-dasharray="2 2"/>
+            <!-- Notch -->
+            <rect x="46" y="6" width="28" height="6" rx="3" fill="var(--paper-2)" opacity="0.55"/>
+            <!-- Home button -->
+            <line x1="40" y1="172" x2="80" y2="172" class="stroke-paper-d" stroke-width="1"/>
+
+            <!-- Screen content: faux telegram -->
+            <text x="60" y="40" text-anchor="middle" class="label-tiny fill-mute">TELEGRAM · #2847</text>
+            <line x1="14" y1="48" x2="106" y2="48" class="stroke-paper-d" stroke-width="0.5"/>
+
+            <text x="18" y="68"  class="label-tiny fill-paper-2">@you →</text>
+            <text x="18" y="82"  class="label-tiny fill-orange">/run druka</text>
+
+            <text x="18" y="102" class="label-tiny fill-mute">@bot ←</text>
+            <text x="18" y="116" class="label-tiny fill-paper-2">✓ ready</text>
+
+            <text x="18" y="138" class="label-tiny fill-mute">@you →</text>
+            <circle cx="60" cy="148" r="2.4" class="fill-green pulse-dot"/>
+            <text x="18" y="156" class="label-tiny fill-green">voice · 0:08</text>
+
+            <!-- Numbered tag -->
+            <g transform="translate(-30 -2)">
+              <rect x="0" y="0" width="22" height="14" fill="var(--ignition)"/>
+              <text x="11" y="10.5" text-anchor="middle" class="label-num" fill="var(--ink)" font-weight="700">01</text>
+            </g>
+            <text x="60" y="200" text-anchor="middle" class="label-title fill-paper">YOUR PHONE</text>
+            <text x="60" y="214" text-anchor="middle" class="label-sub fill-mute">single operator · whitelisted chat id</text>
+          </g>
+
+          <!-- ===================== 02 · BOT API LINK ===================== -->
+          <g>
+            <!-- Vertical flow line phone → daemon -->
+            <line x1="400" y1="290" x2="400" y2="340"
+                  class="stroke-orange flow" stroke-width="1.5"
+                  marker-end="url(#arrow-orange)"/>
+            <!-- Side label panel -->
+            <g transform="translate(440 295)">
+              <line x1="0" y1="14" x2="22" y2="14" class="stroke-paper-d" stroke-width="0.75"/>
+              <text x="28" y="10" class="label-num fill-mute">02 · TRANSPORT</text>
+              <text x="28" y="24" class="label-tiny fill-paper-2">Bot API · long-poll · outbound only</text>
+              <text x="28" y="36" class="label-tiny fill-mute">no inbound ports · NAT-friendly</text>
+            </g>
+          </g>
+
+          <!-- ===================== 03 · DAEMON ===================== -->
+          <g transform="translate(80 350)">
+            <!-- Box -->
+            <rect x="0" y="0" width="640" height="140"
+                  fill="var(--ink)" class="stroke-orange" stroke-width="1.5"/>
+            <!-- Title strip -->
+            <rect x="0" y="0" width="640" height="26" class="fill-orange"/>
+            <text x="14" y="17" class="label-title" fill="var(--ink)">REMOTECODE DAEMON · v0</text>
+            <text x="626" y="17" text-anchor="end" class="label-num" fill="var(--ink)" font-weight="700">03</text>
+
+            <!-- Status row on title strip -->
+            <g transform="translate(420 12)">
+              <circle cx="0" cy="2" r="3" class="fill-ink pulse-dot"/>
+              <text x="8" y="6" class="label-tiny" fill="var(--ink)" font-weight="700">UPLINK OK</text>
+            </g>
+
+            <!-- 3 module columns -->
+            <!-- divider lines -->
+            <line x1="213" y1="38" x2="213" y2="130" class="stroke-paper-d" stroke-width="0.75" stroke-dasharray="2 3"/>
+            <line x1="427" y1="38" x2="427" y2="130" class="stroke-paper-d" stroke-width="0.75" stroke-dasharray="2 3"/>
+
+            <!-- Module A: SQLite state -->
+            <g transform="translate(20 50)">
+              <text x="0" y="0" class="label-num fill-orange">MODULE A</text>
+              <text x="0" y="20" class="label-title fill-paper">SQLite WAL</text>
+              <text x="0" y="38" class="label-tiny fill-mute">agents · messages · quota events</text>
+              <text x="0" y="52" class="label-tiny fill-mute">survives kill -9 · periodic checkpoint</text>
+              <text x="0" y="70" class="label-tiny fill-paper-2">~ /data/state.db</text>
+            </g>
+
+            <!-- Module B: Quota tracker -->
+            <g transform="translate(233 50)">
+              <text x="0" y="0" class="label-num fill-orange">MODULE B</text>
+              <text x="0" y="20" class="label-title fill-paper">Quota tracker</text>
+              <text x="0" y="38" class="label-tiny fill-mute">rolling 5h window · per-agent slice</text>
+              <text x="0" y="52" class="label-tiny fill-mute">parses CLI rate-limit · auto-pause</text>
+              <text x="0" y="70" class="label-tiny fill-warn">73% used · reset 22:00 EET</text>
+            </g>
+
+            <!-- Module C: Dispatcher -->
+            <g transform="translate(447 50)">
+              <text x="0" y="0" class="label-num fill-orange">MODULE C</text>
+              <text x="0" y="20" class="label-title fill-paper">Agent dispatcher</text>
+              <text x="0" y="38" class="label-tiny fill-mute">spawns claude --print subprocesses</text>
+              <text x="0" y="52" class="label-tiny fill-mute">stdout stream-json · per-cwd</text>
+              <text x="0" y="70" class="label-tiny fill-green">3 alive · 1 paused · 0 crashed</text>
+            </g>
+          </g>
+
+          <!-- ===================== BRANCHING ARROWS ===================== -->
+          <!-- daemon bottom y=490, three children y=560 -->
+          <g class="stroke-orange flow" stroke-width="1.5" fill="none">
+            <path d="M 175 490 L 175 525 L 175 560" marker-end="url(#arrow-orange)"/>
+            <path d="M 400 490 L 400 560" marker-end="url(#arrow-orange)"/>
+            <path d="M 625 490 L 625 525 L 625 560" marker-end="url(#arrow-orange)"/>
+          </g>
+          <!-- horizontal connector y=525 -->
+          <line x1="175" y1="525" x2="625" y2="525" class="stroke-orange" stroke-width="1.5"/>
+
+          <!-- ===================== 04 · AGENTS ===================== -->
+          <!-- agent#1 -->
+          <g transform="translate(80 560)">
+            <rect x="0" y="0" width="190" height="110" fill="var(--ink)" class="stroke-paper" stroke-width="1"/>
+            <text x="10" y="18" class="label-num fill-orange">04A · WORKER</text>
+            <circle cx="180" cy="14" r="3.5" class="fill-green pulse-dot"/>
+            <text x="10" y="38" class="label-title fill-paper">agent#1</text>
+            <text x="10" y="56" class="label-tiny fill-mute">claude --print --output-format=stream-json</text>
+            <text x="10" y="72" class="label-tiny fill-paper-2">cwd = ~/druka</text>
+            <text x="10" y="90" class="label-tiny fill-green">running · 23s · 87k tok</text>
+          </g>
+
+          <!-- agent#2 -->
+          <g transform="translate(305 560)">
+            <rect x="0" y="0" width="190" height="110" fill="var(--ink)" class="stroke-paper" stroke-width="1"/>
+            <text x="10" y="18" class="label-num fill-orange">04B · WORKER</text>
+            <circle cx="180" cy="14" r="3.5" class="fill-green pulse-dot"/>
+            <text x="10" y="38" class="label-title fill-paper">agent#2</text>
+            <text x="10" y="56" class="label-tiny fill-mute">claude --print --output-format=stream-json</text>
+            <text x="10" y="72" class="label-tiny fill-paper-2">cwd = ~/ecmrcapture</text>
+            <text x="10" y="90" class="label-tiny fill-green">running · 18 turns · 31k tok</text>
+          </g>
+
+          <!-- FOREMAN — special role -->
+          <g transform="translate(530 560)">
+            <rect x="0" y="0" width="190" height="130" fill="var(--ink)" class="stroke-green" stroke-width="1.5"/>
+            <text x="10" y="18" class="label-num fill-green">04C · SUPERVISOR</text>
+            <circle cx="180" cy="14" r="3.5" class="fill-green pulse-dot"/>
+            <text x="10" y="38" class="label-title fill-paper">the foreman</text>
+            <text x="10" y="56" class="label-tiny fill-mute">claude --print · always-on</text>
+            <text x="10" y="72" class="label-tiny fill-paper-2">ticks every 60s · digest 18:00 EET</text>
+            <text x="10" y="90" class="label-tiny fill-green">SUPERVISING · 2,144 ticks today</text>
+            <line x1="10" y1="100" x2="180" y2="100" class="stroke-paper-d" stroke-width="0.5" stroke-dasharray="2 2"/>
+            <text x="10" y="116" class="label-tiny fill-mute">cannot be killed · only paused</text>
+          </g>
+
+          <!-- ===================== WATCHING ARC ===================== -->
+          <!-- Dashed green arc from foreman top-left, looping back across top of agents -->
+          <path d="M 530 580 C 380 540, 200 540, 80 580"
+                fill="none" class="stroke-green watch" stroke-width="1.25"
+                marker-end="url(#arrow-green)"/>
+          <text x="305" y="540" text-anchor="middle" class="label-tiny fill-green" letter-spacing="0.12em">
+            · WATCHES · REVIEWS · DIGESTS ·
+          </text>
+
+          <!-- ===================== YOUR COMPUTER FRAME ===================== -->
+          <!-- Drawn LAST so labels overlap correctly, semi-transparent dashed bracket -->
+          <g>
+            <rect x="50" y="332" width="700" height="368" fill="none"
+                  class="stroke-paper-d" stroke-width="0.75" stroke-dasharray="3 4"/>
+            <!-- Label tab -->
+            <rect x="50" y="316" width="170" height="16" class="fill-ink-2" stroke="var(--rule)" stroke-width="0.5"/>
+            <text x="60" y="328" class="label-num fill-paper-2">// YOUR COMPUTER</text>
+          </g>
+
+          <!-- ===================== BYOK STRIP ===================== -->
+          <g transform="translate(0 720)">
+            <line x1="50" y1="0" x2="750" y2="0" class="stroke-paper-d" stroke-width="0.5"/>
+            <text x="400" y="20" text-anchor="middle" class="label-num fill-orange" letter-spacing="0.18em">
+              BYOK · YOUR ANTHROPIC ACCOUNT · NO KEY PLUMBING
+            </text>
+            <text x="400" y="38" text-anchor="middle" class="label-tiny fill-mute" letter-spacing="0.06em">
+              the daemon never sees, stores, or proxies your credentials
+            </text>
+          </g>
+
+          <!-- Bottom-right title block stamp -->
+          <g transform="translate(640 770)">
+            <rect x="0" y="0" width="120" height="34" fill="none" class="stroke-paper-d" stroke-width="0.5"/>
+            <line x1="0" y1="11" x2="120" y2="11" class="stroke-paper-d" stroke-width="0.5"/>
+            <text x="60" y="9" text-anchor="middle" class="label-tiny fill-mute">REMOTECODE / VLNS</text>
+            <text x="60" y="22" text-anchor="middle" class="label-tiny fill-paper-2">DWG-001</text>
+            <text x="60" y="31" text-anchor="middle" class="label-tiny fill-mute">2026 · MIT</text>
+          </g>
+
+          <!-- Bottom-left scale bar -->
+          <g transform="translate(40 770)">
+            <text x="0" y="9" class="label-tiny fill-mute">SCALE 1:1</text>
+            <line x1="0" y1="16" x2="60" y2="16" class="stroke-paper-d" stroke-width="1"/>
+            <line x1="0" y1="13" x2="0" y2="19" class="stroke-paper-d" stroke-width="1"/>
+            <line x1="20" y1="13" x2="20" y2="19" class="stroke-paper-d" stroke-width="0.5"/>
+            <line x1="40" y1="13" x2="40" y2="19" class="stroke-paper-d" stroke-width="0.5"/>
+            <line x1="60" y1="13" x2="60" y2="19" class="stroke-paper-d" stroke-width="1"/>
+            <text x="0" y="30" class="label-tiny fill-mute">0</text>
+            <text x="58" y="30" class="label-tiny fill-mute">1u</text>
+          </g>
+        </svg>
 
         <div class="arch-notes">
           <h4>// daemon</h4>
