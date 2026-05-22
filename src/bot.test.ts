@@ -162,8 +162,10 @@ describe("handlers.start", () => {
     };
     const ctx = makeCtx({ chatId: 42 });
     await handlers.start(deps, ctx as never);
-    expect(ctx.replies).toHaveLength(1);
-    expect(ctx.replies[0]!.text).toMatch(/no agents yet|Agents/i);
+    // New UX: welcome + agents listing → 2 messages on a fresh paired chat.
+    expect(ctx.replies.length).toBeGreaterThanOrEqual(1);
+    const joined = ctx.replies.map((r) => r.text).join("\n");
+    expect(joined).toMatch(/no agents yet|Agents|Fleet|ready/i);
   });
 });
 
@@ -220,10 +222,11 @@ describe("handlers.newAgent + agents + kill", () => {
     await handlers.newAgent(deps, ctx as never);
     expect(ctx.replies[0]!.text).toMatch(/created/i);
 
-    // 4. Listing shows the agent
+    // 4. Listing shows the agent (now header msg + one per agent)
     ctx = makeCtx({ chatId: 1 });
     await handlers.agents(deps, ctx as never);
-    expect(ctx.replies[0]!.text).toMatch(/alpha/);
+    const listText = ctx.replies.map((r) => r.text).join("\n");
+    expect(listText).toMatch(/alpha/);
 
     // 5. Kill an unknown agent
     ctx = makeCtx({ chatId: 1, args: ["ghost"] });

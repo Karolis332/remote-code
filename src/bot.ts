@@ -18,7 +18,7 @@
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
-import { Telegraf, type Context } from "telegraf";
+import { Markup, Telegraf, type Context } from "telegraf";
 
 import { consumePairingCode, getOrIssuePairingCode, isAuthorized } from "./auth.js";
 import type { Config } from "./config.js";
@@ -33,6 +33,43 @@ import {
 } from "./db/index.js";
 import { killAgent, runPrompt } from "./claude-runner.js";
 import { snapshot } from "./quota.js";
+
+// ---------------------------------------------------------------------------
+// Reply keyboard (sticky bottom) + per-agent inline keyboards
+// ---------------------------------------------------------------------------
+
+/** Sticky bottom keyboard — shows after /start, /pair, and any reply.
+ *  Buttons send their literal text, which is just the command name. */
+const MAIN_KEYBOARD = Markup.keyboard([
+  ["🤖 /agents", "⚡ /status"],
+  ["📊 /quota", "❓ /help"],
+])
+  .resize()
+  .persistent();
+
+/** Inline keyboard attached to each agent row in /agents. */
+function agentInlineKeyboard(agent: AgentRow): ReturnType<typeof Markup.inlineKeyboard> {
+  const row: ReturnType<typeof Markup.button.callback>[] = [];
+  if (agent.status === "running") {
+    row.push(Markup.button.callback("⏸ Pause", `noop:${agent.id}`));
+  } else if (agent.status !== "killed") {
+    row.push(Markup.button.callback("▶ Run", `run:${agent.id}`));
+  }
+  row.push(Markup.button.callback("📜 Logs", `logs:${agent.id}`));
+  if (agent.status !== "killed") {
+    row.push(Markup.button.callback("✕ Kill", `kill:${agent.id}`));
+  }
+  return Markup.inlineKeyboard([row]);
+}
+
+/** Pending-prompt registry: when a user taps ▶ Run, we wait for their next
+ *  free-text message and dispatch it as the prompt. Auto-expires in 90s. */
+interface PendingPrompt {
+  agentId: string;
+  expiresAt: number;
+}
+const PENDING_PROMPTS = new Map<number, PendingPrompt>();
+const PENDING_TTL_MS = 90 * 1000;
 
 // ---------------------------------------------------------------------------
 // Public surface
@@ -110,7 +147,7 @@ async function sendPaginated(ctx: Context, text: string): Promise<void> {
 // Auth gate
 // ---------------------------------------------------------------------------
 
-function authGate(deps: BotDeps): (ctx: Context) => boolean {
+function authGateInternal(deps: BotDeps): (ctx: Context) => boolean {
   const allowed = parseAllowedChatIds(deps.config.ALLOWED_CHAT_IDS);
   return (ctx: Context) => {
     const chatId = ctx.chat?.id;
@@ -202,8 +239,9 @@ export const handlers = {
       );
       return;
     }
-    // Authorized → list agents
-    await sendPaginated(ctx, renderAgents(listAgents(deps.db)));
+    // Authorized → mount the sticky keyboard + send agent list with inline buttons
+    await ctx.reply("Bridge crew ready. Tap a button or type a command.", MAIN_KEYBOARD);
+    await sendAgentsWithButtons(deps, ctx);
   },
 
   async pair(deps: BotDeps, ctx: HandlerCtx): Promise<void> {
@@ -222,11 +260,14 @@ export const handlers = {
       return;
     }
     deps.logger.info({ chat_id: chatId, label }, "chat paired");
-    await ctx.reply("Paired. Try `/agents`.", { parse_mode: "Markdown" });
+    await ctx.reply("Paired. Bridge crew online.", {
+      parse_mode: "Markdown",
+      ...MAIN_KEYBOARD,
+    });
   },
 
   async agents(deps: BotDeps, ctx: HandlerCtx): Promise<void> {
-    await sendPaginated(ctx, renderAgents(listAgents(deps.db)));
+    await sendAgentsWithButtons(deps, ctx);
   },
 
   async newAgent(deps: BotDeps, ctx: HandlerCtx): Promise<void> {
@@ -397,17 +438,33 @@ export const handlers = {
   async help(_deps: BotDeps, ctx: HandlerCtx): Promise<void> {
     const lines = [
       "*Commands*",
-      "`/start` — show pairing code or list agents",
-      "`/pair <code>` — bind this chat",
-      "`/agents` — list agents",
+      "`/start` — refresh the keyboard + list agents",
+      "`/pair <code>` — bind this chat (only needed once)",
+      "`/agents` — list agents with action buttons",
       "`/new <name> <cwd>` — register a new agent",
       "`/run <name> <prompt>` — dispatch a prompt",
       "`/status` — daemon snapshot",
       "`/quota` — quota window",
       "`/kill <name>` — terminate an agent",
+      "`/cancel` — cancel a pending prompt",
       "`/help` — this message",
+      "",
+      "_Tip: tap ▶ Run on any agent, then send your prompt as a regular message._",
     ];
-    await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+    await ctx.reply(lines.join("\n"), {
+      parse_mode: "Markdown",
+      ...MAIN_KEYBOARD,
+    });
+  },
+
+  async cancel(_deps: BotDeps, ctx: HandlerCtx): Promise<void> {
+    const chatId = ctx.chat?.id;
+    if (typeof chatId !== "number") return;
+    if (PENDING_PROMPTS.delete(chatId)) {
+      await ctx.reply("Pending prompt cancelled.", MAIN_KEYBOARD);
+    } else {
+      await ctx.reply("Nothing to cancel.", MAIN_KEYBOARD);
+    }
   },
 
   // exposed for unit tests
@@ -418,8 +475,44 @@ export const handlers = {
     escapeMd,
     getAgentByName,
     recentMessages,
+    MAIN_KEYBOARD,
+    agentInlineKeyboard,
+    PENDING_PROMPTS,
+    PENDING_TTL_MS,
   },
 };
+
+// ---------------------------------------------------------------------------
+// Agent listing with per-row inline buttons
+// ---------------------------------------------------------------------------
+
+async function sendAgentsWithButtons(deps: BotDeps, ctx: Context): Promise<void> {
+  const agents = listAgents(deps.db);
+  if (agents.length === 0) {
+    await ctx.reply(
+      "No agents yet. Send `/new <name> <cwd>` to spawn one.",
+      { parse_mode: "Markdown", ...MAIN_KEYBOARD },
+    );
+    return;
+  }
+  // Header — gives the keyboard a place to attach.
+  await ctx.reply(`*Fleet · ${agents.length} agent${agents.length === 1 ? "" : "s"}*`, {
+    parse_mode: "Markdown",
+    ...MAIN_KEYBOARD,
+  });
+  for (const a of agents) {
+    const cwd = truncate(a.cwd, 48);
+    const lastSeen = new Date(a.last_active_at).toISOString().slice(11, 19);
+    const text =
+      `${statusEmoji(a.status)}  \`${escapeMd(a.name)}\`\n` +
+      `  cwd:  \`${escapeMd(cwd)}\`\n` +
+      `  status: ${a.status}  ·  last: ${lastSeen}`;
+    await ctx.reply(text, {
+      parse_mode: "Markdown",
+      ...agentInlineKeyboard(a),
+    });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // buildBot
@@ -431,7 +524,7 @@ export const handlers = {
  */
 export function buildBot(deps: BotDeps): Telegraf {
   const bot = new Telegraf(deps.config.TELEGRAM_BOT_TOKEN);
-  const gate = authGate(deps);
+  const gate = authGateInternal(deps);
 
   // Global error trap — never crash the daemon over a handler exception.
   bot.catch((err, ctx) => {
@@ -485,12 +578,151 @@ export function buildBot(deps: BotDeps): Telegraf {
   bot.command("status", wrap("status", handlers.status));
   bot.command("quota", wrap("quota", handlers.quota));
   bot.command("kill", wrap("kill", handlers.kill));
+  bot.command("cancel", wrap("cancel", handlers.cancel));
 
-  // Silently drop everything else from unauthorized chats; reply with help
-  // hint to authorized chats.
+  // ----- Inline keyboard callbacks -----
+
+  // ▶ Run — start the pending-prompt flow.
+  bot.action(/^run:(.+)$/, async (ctx) => {
+    if (!gate(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const id = ctx.match[1];
+    if (!id) {
+      await ctx.answerCbQuery("Bad payload");
+      return;
+    }
+    const agent = listAgents(deps.db).find((a) => a.id === id);
+    if (!agent) {
+      await ctx.answerCbQuery("Agent vanished");
+      return;
+    }
+    PENDING_PROMPTS.set(ctx.chat!.id, {
+      agentId: agent.id,
+      expiresAt: Date.now() + PENDING_TTL_MS,
+    });
+    await ctx.answerCbQuery(`Send the prompt for ${agent.name}`);
+    await ctx.reply(
+      `▶ \`${escapeMd(agent.name)}\` — send the prompt as your next message.\nType \`/cancel\` to abort. Expires in 90s.`,
+      { parse_mode: "Markdown" },
+    );
+  });
+
+  // 📜 Logs — show last 5 message exchanges for this agent.
+  bot.action(/^logs:(.+)$/, async (ctx) => {
+    if (!gate(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const id = ctx.match[1];
+    if (!id) {
+      await ctx.answerCbQuery("Bad payload");
+      return;
+    }
+    const agent = listAgents(deps.db).find((a) => a.id === id);
+    if (!agent) {
+      await ctx.answerCbQuery("Agent vanished");
+      return;
+    }
+    await ctx.answerCbQuery();
+    const msgs = recentMessages(deps.db, id, 6).reverse();
+    if (msgs.length === 0) {
+      await ctx.reply(`No history for \`${escapeMd(agent.name)}\` yet.`, {
+        parse_mode: "Markdown",
+      });
+      return;
+    }
+    const lines = msgs.map((m) => {
+      const ts = new Date(m.created_at).toISOString().slice(11, 19);
+      const body = truncate(m.body.replace(/\r?\n/g, " "), 200);
+      const tag = m.role === "user" ? "@you" : m.role === "assistant" ? "@bot" : `@${m.role}`;
+      return `[${ts}] ${tag}: ${body}`;
+    });
+    await sendPaginated(ctx, "*Recent log*\n" + lines.join("\n"));
+  });
+
+  // ✕ Kill — terminate the subprocess, mark killed.
+  bot.action(/^kill:(.+)$/, async (ctx) => {
+    if (!gate(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const id = ctx.match[1];
+    if (!id) {
+      await ctx.answerCbQuery("Bad payload");
+      return;
+    }
+    const agent = listAgents(deps.db).find((a) => a.id === id);
+    if (!agent) {
+      await ctx.answerCbQuery("Agent vanished");
+      return;
+    }
+    await ctx.answerCbQuery("Killing…");
+    const ok = killAgent(agent.id);
+    updateAgentStatus(deps.db, agent.id, "killed");
+    deps.logger.info({ id: agent.id, name: agent.name, ok }, "agent killed via inline");
+    // Edit the original message to reflect new state.
+    await ctx.editMessageReplyMarkup(undefined).catch(() => {/* ignore */});
+    await ctx.reply(
+      ok
+        ? `✕ Killed \`${escapeMd(agent.name)}\`.`
+        : `\`${escapeMd(agent.name)}\` had no live process; marked killed.`,
+      { parse_mode: "Markdown" },
+    );
+  });
+
+  // ⏸ Pause is currently a no-op placeholder (subprocess is one-shot, so
+  // there's nothing to pause mid-flight; rate-limit pauses are automatic).
+  bot.action(/^noop:.*$/, async (ctx) => {
+    await ctx.answerCbQuery("Already running. Use ✕ Kill to stop.");
+  });
+
+  // Default text catch-all: if there's a pending /run prompt for this chat,
+  // dispatch the message as the prompt. Otherwise show the help hint.
   bot.on("message", async (ctx) => {
     if (!gate(ctx)) return;
-    await ctx.reply(NOT_PAIRED_HINT).catch(() => {
+    const chatId = ctx.chat.id;
+    const msg = ctx.message as { text?: string };
+    const text = (msg.text ?? "").trim();
+
+    // 1) Skip if this looks like a command — let the command handlers handle it.
+    if (text.startsWith("/")) return;
+    // 2) Skip empty / non-text (photos, etc).
+    if (!text) return;
+
+    // 3) If there's a pending run prompt, dispatch it.
+    const pending = PENDING_PROMPTS.get(chatId);
+    if (pending && pending.expiresAt > Date.now()) {
+      PENDING_PROMPTS.delete(chatId);
+      const agent = listAgents(deps.db).find((a) => a.id === pending.agentId);
+      if (!agent) {
+        await ctx.reply("Agent vanished while you were typing.").catch(() => {});
+        return;
+      }
+      // Synthesize the args /run would have received.
+      const fakeCtx = Object.assign(ctx, {
+        args: [agent.name, text],
+        payload: `${agent.name} ${text}`,
+      }) as HandlerCtx;
+      try {
+        await handlers.run(deps, fakeCtx);
+      } catch (err) {
+        deps.logger.error(
+          { err: String(err), agentId: agent.id },
+          "inline-run dispatch crashed",
+        );
+        await ctx.reply(GENERIC_ERROR).catch(() => {});
+      }
+      return;
+    }
+
+    // 4) Expired pending → clean it up.
+    if (pending && pending.expiresAt <= Date.now()) {
+      PENDING_PROMPTS.delete(chatId);
+    }
+
+    await ctx.reply(NOT_PAIRED_HINT, MAIN_KEYBOARD).catch(() => {
       /* swallow */
     });
   });
