@@ -33,7 +33,7 @@
 
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: auto; } /* JS handles smooth scroll for back-to-top */
   body {
     background: var(--ink);
     color: var(--paper);
@@ -46,7 +46,8 @@
     position: relative;
   }
 
-  /* CRT scanline + grain overlay — adds atmosphere without dominating */
+  /* Atmosphere overlays — GPU-friendly (no mix-blend-mode; was causing scroll jank).
+     Promoted to own compositing layer so the browser doesn't repaint per scroll frame. */
   body::before {
     content: "";
     position: fixed; inset: 0;
@@ -55,21 +56,22 @@
     background:
       repeating-linear-gradient(
         0deg,
-        rgba(255,255,255,0.014) 0px,
-        rgba(255,255,255,0.014) 1px,
+        rgba(244,240,230,0.022) 0px,
+        rgba(244,240,230,0.022) 1px,
         transparent 1px,
         transparent 3px
       );
-    mix-blend-mode: overlay;
+    transform: translateZ(0);
+    will-change: transform;
   }
   body::after {
     content: "";
-    position: fixed; inset: -50%;
+    position: fixed; inset: 0;
     pointer-events: none;
     z-index: 9998;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/></svg>");
-    opacity: 0.06;
-    mix-blend-mode: screen;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.95  0 0 0 0 0.92  0 0 0 0 0.85  0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    transform: translateZ(0);
+    will-change: transform;
   }
 
   ::selection { background: var(--ignition); color: var(--ink); }
