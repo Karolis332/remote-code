@@ -1,0 +1,1319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RemoteCode — Boss your AI fleet from your phone.</title>
+<meta name="description" content="An office of Claude Code agents on your PC. Driven by Telegram. Watched by a supervisor. Pause for rate limits, resume on their own. You go to lunch. They keep working.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,30..100,0..1&family=Spectral:ital,wght@0,300;0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ------------------------------------------------------------------
+     RemoteCode — bridge crew aesthetic.
+     1970s mission control × modern editorial × terminal.
+     ------------------------------------------------------------------ */
+  :root {
+    --ink:        #0A0A0B;
+    --ink-2:      #14130F;
+    --paper:      #F4F0E6;
+    --paper-2:    #DCD4BF;
+    --ignition:   #F25C19;
+    --telemetry:  #5AFFB0;
+    --warn:       #FFB319;
+    --rule:       #2A2925;
+    --rule-warm:  #38322A;
+    --mute:       #76726A;
+    --mute-2:     #4C483F;
+    --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+    --font-body:    'Spectral', 'Georgia', serif;
+    --font-mono:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+    --grid-gap: clamp(1.5rem, 3vw, 3rem);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.55;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* CRT scanline + grain overlay — adds atmosphere without dominating */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    background:
+      repeating-linear-gradient(
+        0deg,
+        rgba(255,255,255,0.014) 0px,
+        rgba(255,255,255,0.014) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    mix-blend-mode: overlay;
+  }
+  body::after {
+    content: "";
+    position: fixed; inset: -50%;
+    pointer-events: none;
+    z-index: 9998;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/></svg>");
+    opacity: 0.06;
+    mix-blend-mode: screen;
+  }
+
+  ::selection { background: var(--ignition); color: var(--ink); }
+
+  /* -------------- Top transmission strip -------------- */
+  .transmit {
+    position: relative;
+    z-index: 10;
+    border-bottom: 1px solid var(--rule);
+    background: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--mute);
+    padding: 10px 0;
+  }
+  .transmit-inner {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 0 clamp(1.25rem, 4vw, 3rem);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .transmit-left  { justify-self: start; }
+  .transmit-mid   { justify-self: center; color: var(--paper-2); }
+  .transmit-right { justify-self: end; display: flex; gap: 1.25rem; align-items: center; }
+  .blink { animation: blink 1.05s steps(2,start) infinite; color: var(--telemetry); }
+  @keyframes blink { to { visibility: hidden; } }
+  .live-dot {
+    display: inline-block; width: 7px; height: 7px;
+    background: var(--telemetry); border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(90,255,176,0.18);
+    margin-right: 8px; vertical-align: middle;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(90,255,176,0.18); }
+    50%      { box-shadow: 0 0 0 6px rgba(90,255,176,0); }
+  }
+
+  /* -------------- Layout shell -------------- */
+  main { position: relative; z-index: 2; }
+  .wrap {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 0 clamp(1.25rem, 4vw, 3rem);
+  }
+  .hairline { height: 1px; background: var(--rule); border: 0; margin: 0; }
+  .hairline-warm { height: 1px; background: var(--rule-warm); border: 0; margin: 0; }
+
+  /* -------------- Brand -------------- */
+  .brand {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    display: inline-flex; align-items: center; gap: 10px;
+    color: var(--paper);
+  }
+  .brand .mark {
+    display: inline-block; width: 14px; height: 14px;
+    background: var(--ignition);
+    transform: rotate(45deg);
+    box-shadow: 0 0 0 1px var(--ink), 0 0 0 2px var(--ignition);
+  }
+  nav.primary {
+    display: flex; gap: 2rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  nav.primary a {
+    color: var(--paper-2);
+    text-decoration: none;
+    padding-bottom: 2px;
+    border-bottom: 1px solid transparent;
+    transition: border-color .2s, color .2s;
+  }
+  nav.primary a:hover { color: var(--ignition); border-color: var(--ignition); }
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1.6rem 0;
+  }
+
+  /* -------------- Hero -------------- */
+  .hero {
+    padding: clamp(3rem, 8vw, 7rem) 0 clamp(4rem, 8vw, 8rem);
+    position: relative;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--grid-gap);
+  }
+  @media (min-width: 980px) {
+    .hero-grid {
+      grid-template-columns: 1.4fr 1fr;
+      align-items: end;
+    }
+  }
+  .hero-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+    opacity: 0; animation: rise 0.7s 0.05s forwards;
+  }
+  .hero-eyebrow .tag {
+    color: var(--ignition);
+    border: 1px solid var(--ignition);
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+  h1.hero-title {
+    font-family: var(--font-display);
+    font-weight: 380;
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+    font-size: clamp(2.6rem, 7vw, 5.6rem);
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    margin: 0;
+    color: var(--paper);
+    opacity: 0; animation: rise 0.9s 0.15s forwards;
+  }
+  h1.hero-title em {
+    font-style: italic;
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+    color: var(--ignition);
+  }
+  h1.hero-title .ink-stop { color: var(--ignition); }
+
+  .hero-sub {
+    font-family: var(--font-body);
+    font-size: clamp(1.1rem, 1.6vw, 1.35rem);
+    line-height: 1.5;
+    max-width: 38ch;
+    color: var(--paper-2);
+    margin: 2rem 0 0;
+    opacity: 0; animation: rise 0.9s 0.3s forwards;
+  }
+  .hero-sub em { color: var(--telemetry); font-style: italic; }
+
+  .hero-cta-row {
+    display: flex; gap: 1rem; flex-wrap: wrap;
+    margin-top: 2.5rem;
+    align-items: center;
+    opacity: 0; animation: rise 0.9s 0.45s forwards;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 12px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 16px 22px;
+    border: 1px solid var(--ignition);
+    background: var(--ignition);
+    color: var(--ink);
+    transition: transform .12s ease, box-shadow .2s ease;
+    position: relative;
+    cursor: pointer;
+  }
+  .btn::after {
+    content: ""; position: absolute; inset: 4px; border: 1px solid var(--ink); pointer-events: none;
+  }
+  .btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 0 var(--paper-2);
+  }
+  .btn.ghost {
+    background: transparent;
+    color: var(--paper);
+    border-color: var(--paper-2);
+  }
+  .btn.ghost::after { border-color: var(--paper-2); opacity: 0.3; }
+  .btn.ghost:hover { border-color: var(--ignition); color: var(--ignition); }
+  .btn.ghost:hover::after { border-color: var(--ignition); opacity: 0.4; }
+
+  /* Right side of hero: live mission console */
+  .console {
+    border: 1px solid var(--rule);
+    background: linear-gradient(180deg, var(--ink-2), var(--ink));
+    padding: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--paper-2);
+    position: relative;
+    opacity: 0; animation: rise 1s 0.6s forwards;
+    box-shadow: 0 30px 60px -30px rgba(242,92,25,0.18);
+  }
+  .console::before {
+    content: ""; position: absolute; top:-1px; left:-1px; right:-1px;
+    height: 22px; background: var(--rule);
+    display: block;
+  }
+  .console-bar {
+    position: relative; z-index: 2;
+    height: 22px;
+    margin: -1.25rem -1.25rem 1rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--ink-2);
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px;
+    color: var(--mute);
+    font-size: 11px; letter-spacing: 0.08em;
+  }
+  .console-bar .light { width: 8px; height: 8px; border-radius: 50%; background: var(--mute-2); }
+  .console-bar .light.amber { background: var(--warn); box-shadow: 0 0 4px var(--warn); }
+  .console-bar .light.green { background: var(--telemetry); box-shadow: 0 0 4px var(--telemetry); animation: pulse 2s infinite; }
+  .console-bar .right { margin-left: auto; }
+
+  .agent-row {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .agent-row:last-of-type { border-bottom: 0; }
+  .agent-row .status { width: 10px; height: 10px; border-radius: 50%; }
+  .status.ok { background: var(--telemetry); animation: pulse 2s infinite; }
+  .status.warn { background: var(--warn); }
+  .status.idle { background: var(--mute-2); border: 1px solid var(--mute); }
+  .agent-row .name { color: var(--paper); }
+  .agent-row .task { color: var(--mute); font-size: 11.5px; }
+  .agent-row .meta { color: var(--paper-2); text-align: right; font-size: 11.5px; }
+  .agent-row .meta .small { color: var(--mute); font-size: 10.5px; display: block; }
+
+  .console-foot {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px dashed var(--rule);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--mute);
+    letter-spacing: 0.06em;
+  }
+  .cursor { color: var(--telemetry); }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* -------------- Numbered sections -------------- */
+  section {
+    padding: clamp(4rem, 8vw, 8rem) 0;
+    border-top: 1px solid var(--rule);
+    position: relative;
+  }
+  .section-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .section-num::before {
+    content: "";
+    display: inline-block;
+    width: 26px; height: 1px;
+    background: var(--ignition);
+  }
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 350;
+    font-variation-settings: "opsz" 144, "SOFT" 30;
+    font-size: clamp(2rem, 4.5vw, 3.8rem);
+    line-height: 1.04;
+    letter-spacing: -0.018em;
+    color: var(--paper);
+    margin: 0 0 1.5rem;
+    max-width: 22ch;
+  }
+  h2 em {
+    font-style: italic;
+    color: var(--ignition);
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+  }
+  .section-lede {
+    font-size: 1.2rem;
+    color: var(--paper-2);
+    max-width: 50ch;
+    line-height: 1.5;
+    margin-bottom: 3rem;
+  }
+
+  /* -------------- Manifesto -------------- */
+  .manifesto-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--grid-gap);
+  }
+  @media (min-width: 980px) {
+    .manifesto-grid { grid-template-columns: 1fr 1.4fr; }
+  }
+  .manifesto-num {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 1;
+    font-style: italic;
+    font-size: clamp(6rem, 18vw, 14rem);
+    line-height: 0.8;
+    color: var(--ignition);
+    margin: 0;
+  }
+  .manifesto-body p {
+    font-size: 1.2rem;
+    line-height: 1.55;
+    color: var(--paper-2);
+    margin: 0 0 1.4rem;
+  }
+  .manifesto-body p:first-child::first-letter {
+    font-family: var(--font-display);
+    font-size: 4em;
+    float: left;
+    line-height: 0.85;
+    padding: 0.1em 0.12em 0 0;
+    color: var(--ignition);
+    font-style: italic;
+  }
+  .manifesto-body strong { color: var(--paper); font-weight: 500; }
+
+  /* -------------- How it works -------------- */
+  .steps {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  @media (min-width: 880px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+  .step {
+    background: var(--ink);
+    padding: 2.2rem 1.8rem 2rem;
+    position: relative;
+  }
+  .step-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--ignition);
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+  .step h3 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-variation-settings: "opsz" 72, "SOFT" 30;
+    font-size: 1.65rem;
+    line-height: 1.1;
+    margin: 0 0 0.9rem;
+    color: var(--paper);
+  }
+  .step p {
+    font-size: 0.97rem;
+    line-height: 1.5;
+    color: var(--paper-2);
+    margin: 0 0 1.2rem;
+  }
+  .step .term {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--telemetry);
+    background: var(--ink-2);
+    border: 1px dashed var(--rule);
+    padding: 10px 12px;
+    display: block;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .step .term .muted { color: var(--mute); }
+  .step .term .accent { color: var(--ignition); }
+
+  /* -------------- Architecture ASCII -------------- */
+  .arch {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--grid-gap);
+    align-items: start;
+  }
+  @media (min-width: 980px) { .arch { grid-template-columns: 1fr 1.3fr; } }
+  pre.ascii {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--paper-2);
+    background: var(--ink-2);
+    border: 1px solid var(--rule);
+    padding: 1.5rem;
+    overflow-x: auto;
+    margin: 0;
+    white-space: pre;
+  }
+  pre.ascii .a { color: var(--ignition); }
+  pre.ascii .g { color: var(--telemetry); }
+  pre.ascii .w { color: var(--warn); }
+  pre.ascii .m { color: var(--mute); }
+  .arch-notes h4 {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ignition);
+    margin: 0 0 .5rem;
+  }
+  .arch-notes p {
+    color: var(--paper-2);
+    font-size: 1rem;
+    line-height: 1.55;
+    margin: 0 0 1.2rem;
+    max-width: 48ch;
+  }
+  .arch-notes strong { color: var(--paper); font-weight: 500; }
+
+  /* -------------- Foreman callout -------------- */
+  .foreman {
+    background: var(--paper);
+    color: var(--ink);
+    padding: clamp(3rem, 6vw, 5rem) 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+  }
+  .foreman::after {
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 1px;
+    background: repeating-linear-gradient(90deg, var(--ink) 0 14px, transparent 14px 22px);
+  }
+  .foreman .wrap { position: relative; }
+  .foreman .section-num { color: var(--mute-2); }
+  .foreman .section-num::before { background: var(--ignition); }
+  .foreman h2 { color: var(--ink); }
+  .foreman h2 em { color: var(--ignition); }
+  .foreman p.lede {
+    color: var(--mute-2);
+    font-size: 1.2rem; line-height: 1.5;
+    max-width: 48ch;
+    margin-bottom: 2.5rem;
+  }
+  .laws {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-top: 1px solid var(--ink);
+  }
+  @media (min-width: 760px) { .laws { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 1080px) { .laws { grid-template-columns: 1fr 1fr 1fr; } }
+  .law {
+    padding: 1.4rem 1.6rem 1.5rem 0;
+    border-bottom: 1px solid var(--ink);
+    border-right: 1px solid var(--ink);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+  }
+  .law:nth-child(3n)  { border-right: 0; }
+  @media (max-width: 1079px) {
+    .law:nth-child(odd)  { border-right: 1px solid var(--ink); }
+    .law:nth-child(even) { border-right: 0; }
+    .law:nth-child(3n)   { border-right: inherit; }
+  }
+  .law .n {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ignition);
+    letter-spacing: 0.16em;
+    padding-top: 4px;
+  }
+  .law .t {
+    font-family: var(--font-display);
+    font-weight: 380;
+    font-variation-settings: "opsz" 72;
+    font-size: 1.18rem;
+    line-height: 1.35;
+    color: var(--ink);
+  }
+  .law .t em { font-style: italic; color: var(--mute-2); }
+  .foreman-foot {
+    margin-top: 2rem;
+    font-family: var(--font-mono);
+    font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--mute-2);
+  }
+  .foreman-foot strong { color: var(--ink); font-weight: 700; }
+
+  /* -------------- Pricing -------------- */
+  .price-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-left: 1px solid var(--rule);
+    border-top: 1px solid var(--rule);
+  }
+  @media (min-width: 920px) { .price-grid { grid-template-columns: 1fr 1fr 1fr; } }
+  .tier {
+    padding: 2rem 1.8rem 2.4rem;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+  }
+  .tier-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--paper-2);
+    margin-bottom: 1rem;
+  }
+  .tier.recommended { background: var(--ink-2); position: relative; }
+  .tier.recommended::before {
+    content: "Recommended";
+    position: absolute; top: -1px; left: -1px;
+    background: var(--ignition);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 10.5px; letter-spacing: 0.16em;
+    text-transform: uppercase; font-weight: 700;
+    padding: 5px 10px;
+  }
+  .tier-price {
+    font-family: var(--font-display);
+    font-weight: 350;
+    font-variation-settings: "opsz" 144, "SOFT" 30;
+    font-size: clamp(3rem, 5vw, 4.5rem);
+    line-height: 0.95;
+    color: var(--paper);
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .tier-price .cycle {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--mute);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-left: 4px;
+    vertical-align: super;
+  }
+  .tier-tagline {
+    color: var(--paper-2);
+    font-size: 1rem;
+    line-height: 1.45;
+    margin: 1rem 0 1.6rem;
+    max-width: 30ch;
+  }
+  .tier-list {
+    list-style: none; padding: 0; margin: 0 0 1.5rem;
+    color: var(--paper-2);
+    font-size: 0.94rem;
+    line-height: 1.55;
+  }
+  .tier-list li {
+    padding: 7px 0;
+    border-bottom: 1px dashed var(--rule);
+    display: grid;
+    grid-template-columns: 14px 1fr;
+    gap: 10px;
+  }
+  .tier-list li::before {
+    content: "+";
+    color: var(--ignition);
+    font-family: var(--font-mono);
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .tier-cta { margin-top: auto; }
+
+  /* -------------- FAQ -------------- */
+  .faq {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-top: 1px solid var(--rule);
+  }
+  details.q {
+    border-bottom: 1px solid var(--rule);
+    padding: 1.6rem 0;
+  }
+  details.q summary {
+    list-style: none;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    align-items: baseline;
+  }
+  details.q summary::-webkit-details-marker { display: none; }
+  details.q summary > .q-text {
+    font-family: var(--font-display);
+    font-weight: 380;
+    font-variation-settings: "opsz" 72;
+    font-size: clamp(1.2rem, 2vw, 1.55rem);
+    line-height: 1.25;
+    color: var(--paper);
+  }
+  details.q summary > .icon {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ignition);
+    letter-spacing: 0.1em;
+  }
+  details.q[open] summary > .icon::before { content: "[—]"; }
+  details.q summary > .icon::before { content: "[+]"; }
+  details.q .a {
+    margin-top: 1rem;
+    color: var(--paper-2);
+    font-size: 1.02rem;
+    line-height: 1.6;
+    max-width: 68ch;
+  }
+  details.q .a code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--ink-2);
+    border: 1px solid var(--rule);
+    padding: 1px 6px;
+  }
+
+  /* -------------- Final CTA -------------- */
+  .final {
+    padding: clamp(5rem, 12vw, 9rem) 0 clamp(4rem, 9vw, 7rem);
+    text-align: center;
+    border-top: 1px solid var(--rule);
+    position: relative;
+  }
+  .final h2 {
+    margin: 0 auto 1.4rem;
+    font-size: clamp(2.4rem, 6.5vw, 5rem);
+    line-height: 0.98;
+    max-width: 16ch;
+  }
+  .final h2 em { color: var(--ignition); }
+  .final p {
+    color: var(--paper-2);
+    font-size: 1.15rem;
+    max-width: 48ch;
+    margin: 0 auto 2.5rem;
+  }
+
+  /* -------------- Footer -------------- */
+  footer {
+    border-top: 1px solid var(--rule);
+    background: var(--ink);
+    padding: 2.5rem 0 2rem;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    color: var(--mute);
+  }
+  .foot-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  @media (min-width: 720px) {
+    .foot-grid {
+      grid-template-columns: 1.5fr 1fr 1fr 1fr;
+      gap: 2rem;
+    }
+  }
+  .foot-grid h5 {
+    font-size: 10.5px;
+    color: var(--paper-2);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin: 0 0 .9rem;
+  }
+  .foot-grid ul { list-style: none; padding: 0; margin: 0; }
+  .foot-grid li { padding: 4px 0; }
+  .foot-grid a { color: var(--mute); text-decoration: none; }
+  .foot-grid a:hover { color: var(--ignition); }
+  .foot-bottom {
+    margin-top: 2.5rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .foot-bottom .coords { color: var(--paper-2); }
+
+  /* small accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================== -->
+<!-- TRANSMISSION STRIP                                                -->
+<!-- ============================================================== -->
+<div class="transmit">
+  <div class="transmit-inner">
+    <div class="transmit-left">
+      <span class="live-dot"></span>FLEET ONLINE · 4 AGENTS · UPLINK OK
+    </div>
+    <div class="transmit-mid">
+      MISSION CLOCK · <span id="clock">--:--:-- UTC</span>
+    </div>
+    <div class="transmit-right">
+      <span>BUILD 0.0.1<span class="blink">_</span></span>
+      <span>VLNS · 54.687°N 25.279°E</span>
+    </div>
+  </div>
+</div>
+
+<main>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="#top" class="brand"><span class="mark" aria-hidden="true"></span>RemoteCode</a>
+      <nav class="primary">
+        <a href="#how">How</a>
+        <a href="#arch">Architecture</a>
+        <a href="#foreman">The Foreman</a>
+        <a href="#price">Pricing</a>
+        <a href="https://github.com/Karolis332/remote-code">Source</a>
+      </nav>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- HERO                                                              -->
+  <!-- ============================================================== -->
+  <section class="hero" id="top" style="border-top:0;">
+    <div class="wrap">
+      <div class="hero-grid">
+        <div>
+          <div class="hero-eyebrow">
+            <span class="tag">PRE-ALPHA</span>
+            <span>RemoteCode · v0 · Telegram → Claude Code · BYOK</span>
+          </div>
+          <h1 class="hero-title">
+            You go to lunch.<br>
+            Your <em>agents</em> keep working<span class="ink-stop">.</span>
+          </h1>
+          <p class="hero-sub">
+            RemoteCode is a <em>mission-control system</em> for the Claude Code agents
+            already on your computer. Spawn a fleet. Drive them from Telegram. Sleep
+            while they ship.
+          </p>
+          <div class="hero-cta-row">
+            <a href="#price" class="btn">Boot the fleet →</a>
+            <a href="#how" class="btn ghost">Read the specs</a>
+          </div>
+        </div>
+
+        <!-- live console mock -->
+        <div class="console" aria-hidden="true">
+          <div class="console-bar">
+            <span class="light green"></span>
+            <span class="light amber"></span>
+            <span class="light"></span>
+            <span>~/remote-code · FOREMAN</span>
+            <span class="right" id="console-clock">04:21:08</span>
+          </div>
+
+          <div class="agent-row">
+            <span class="status ok"></span>
+            <div>
+              <div class="name">agent#1 · druka-deploy</div>
+              <div class="task">running tests · 23s elapsed · cwd=~/druka</div>
+            </div>
+            <div class="meta">
+              <span class="cursor">●</span> running
+              <span class="small">42 turns · 87k tok</span>
+            </div>
+          </div>
+
+          <div class="agent-row">
+            <span class="status ok"></span>
+            <div>
+              <div class="name">agent#2 · ecmr-pricing-polish</div>
+              <div class="task">writing PRICING.md · token budget ok</div>
+            </div>
+            <div class="meta">
+              <span class="cursor">●</span> running
+              <span class="small">18 turns · 31k tok</span>
+            </div>
+          </div>
+
+          <div class="agent-row">
+            <span class="status warn"></span>
+            <div>
+              <div class="name">agent#3 · grimoire-recs</div>
+              <div class="task">paused · rate limit · resumes 18:42 EET</div>
+            </div>
+            <div class="meta">
+              <span class="cursor" style="color:var(--warn);">●</span> paused
+              <span class="small">retry in 41m</span>
+            </div>
+          </div>
+
+          <div class="agent-row">
+            <span class="status idle"></span>
+            <div>
+              <div class="name">foreman · always-on</div>
+              <div class="task">last review 12m ago · digest at 18:00 EET</div>
+            </div>
+            <div class="meta">
+              <span class="small" style="color:var(--telemetry);">SUPERVISING</span>
+              <span class="small">2,144 ticks today</span>
+            </div>
+          </div>
+
+          <div class="console-foot">
+            <span>$ /quota global → 73% used · resets 22:00 EET</span>
+            <span class="cursor">▮</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== -->
+  <!-- MANIFESTO                                                         -->
+  <!-- ============================================================== -->
+  <section id="why">
+    <div class="wrap">
+      <div class="section-num">01 · Premise</div>
+      <div class="manifesto-grid">
+        <div class="manifesto-num">01</div>
+        <div class="manifesto-body">
+          <p>
+            Coding agents are 24/7 workers stuck inside an 8-hour-a-day human at a desk.
+            When you close the laptop, the fleet stops. When you sit down with a coffee,
+            you spend twenty minutes remembering what you were doing.
+          </p>
+          <p>
+            <strong>RemoteCode unbinds that.</strong> A daemon runs on your computer.
+            A Telegram chat in your pocket talks to it. Agents you've spawned keep
+            their cwd, their history, and their patience. When their rate limit hits,
+            they wait politely and resume on their own. When something breaks, the
+            <strong>Foreman</strong> reports it before you have to ask.
+          </p>
+          <p>
+            You bring your own Claude account. We bring the office, the dispatch desk,
+            the manager that never sleeps, and the only door you need — your phone.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== -->
+  <!-- HOW IT WORKS                                                      -->
+  <!-- ============================================================== -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-num">02 · How</div>
+      <h2>Three steps. <em>No cloud.</em> No keys leaving the machine.</h2>
+      <p class="section-lede">
+        Telegram is the relay. Your PC is the runtime. Your Claude account stays
+        where you put it. Zero infrastructure between them.
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">Step 01 · install</div>
+          <h3>Boot the daemon</h3>
+          <p>
+            One command. RemoteCode auto-detects your `claude` CLI, registers as a
+            system service (systemd / launchd / Windows service), and prints a
+            pairing code.
+          </p>
+<pre class="term"><span class="muted">$</span> curl -fsSL <span class="accent">remotecode.io/get</span> | sh
+<span class="muted">›</span> claude detected ✓ (Claude Code v0.18.2)
+<span class="muted">›</span> systemd unit installed
+<span class="muted">›</span> pairing code: <span class="accent">H7Q-4F2</span></pre>
+        </div>
+
+        <div class="step">
+          <div class="step-num">Step 02 · pair</div>
+          <h3>Pair your phone</h3>
+          <p>
+            Open Telegram, message your RemoteCode bot, send the code. Your chat
+            ID gets whitelisted. Nobody else can drive the daemon.
+          </p>
+<pre class="term"><span class="muted">@you →</span> /pair <span class="accent">H7Q-4F2</span>
+<span class="muted">@bot ←</span> paired · chat #2847219
+<span class="muted">@bot ←</span> 0 agents yet · /new to spawn</pre>
+        </div>
+
+        <div class="step">
+          <div class="step-num">Step 03 · dispatch</div>
+          <h3>Run the fleet</h3>
+          <p>
+            Spawn agents. Each gets its own working directory, history, and quota
+            slice. Drive them by text or voice note. The Foreman watches them all.
+          </p>
+<pre class="term"><span class="muted">@you →</span> /new <span class="accent">druka</span> ~/druka
+<span class="muted">@you →</span> /run druka <span class="accent">"fix the failing rspec"</span>
+<span class="muted">@bot ←</span> ✓ tests pass · 3 files touched
+<span class="muted">@bot ←</span> ready</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== -->
+  <!-- ARCHITECTURE                                                      -->
+  <!-- ============================================================== -->
+  <section id="arch">
+    <div class="wrap">
+      <div class="section-num">03 · Architecture</div>
+      <h2>Telegram is <em>the bus.</em> Your computer is <em>the office.</em></h2>
+      <p class="section-lede">
+        Zero hosted infrastructure. Zero cloud relay. The Bot API is the only
+        long-haul protocol. Your daemon long-polls. Every byte stays on your
+        machine.
+      </p>
+
+      <div class="arch">
+        <pre class="ascii" aria-label="RemoteCode architecture diagram"><span class="m">          ┌─────────────────────────┐</span>
+<span class="m">          │</span>     <span class="a">YOUR PHONE</span>          <span class="m">│</span>
+<span class="m">          │</span>  Telegram chat #2847   <span class="m">│</span>
+<span class="m">          └────────────┬────────────┘</span>
+<span class="m">                       │</span>  <span class="m">Bot API (long-poll)</span>
+<span class="m">                       ▼</span>
+<span class="m">          ┌─────────────────────────┐</span>
+<span class="m">          │</span>  <span class="g">REMOTECODE DAEMON</span>      <span class="m">│</span>
+<span class="m">          │</span>  ┌─ SQLite (state) ─┐  <span class="m">│</span>
+<span class="m">          │</span>  ┌─ Quota tracker ──┐  <span class="m">│</span>
+<span class="m">          │</span>  ┌─ Agent pool ─────┐  <span class="m">│</span>
+<span class="m">          └────────┬─────┬─────┬────┘</span>
+<span class="m">                   │</span>     <span class="m">│</span>     <span class="m">│</span>
+<span class="m">    ┌──────────────┘</span>     <span class="m">│</span>     <span class="m">└──────────────┐</span>
+<span class="m">    ▼</span>                    <span class="m">▼</span>                    <span class="m">▼</span>
+<span class="a">agent#1</span>              <span class="a">agent#2</span>              <span class="w">foreman</span>
+claude --print       claude --print       claude --print
+cwd=~/projA          cwd=~/projB          <span class="g">always-on supervisor</span>
+<span class="m">────────────────────────────────────────────────────────</span>
+<span class="m">BYOK · your Anthropic account · no key plumbing</span></pre>
+
+        <div class="arch-notes">
+          <h4>// daemon</h4>
+          <p>
+            Long-running Node process. SQLite-backed state survives a <strong>kill -9</strong>.
+            Each worker is a `claude` subprocess in its own working directory. Crashes are
+            isolated; the bot stays up.
+          </p>
+          <h4>// quota tracker</h4>
+          <p>
+            Parses CLI output for the exact rate-limit message Anthropic emits.
+            Agents auto-pause until reset. The bot tells you when, and again when
+            they resume. <strong>No "your agent stopped" mystery.</strong>
+          </p>
+          <h4>// the foreman</h4>
+          <p>
+            One always-on supervisor agent runs in the background. Ticks every 60s,
+            reviews hourly, digests daily, summarizes weekly. Cannot be killed — only
+            paused. Reports straight to your chat.
+          </p>
+          <h4>// transport</h4>
+          <p>
+            Telegram's Bot API is the relay. No cloud server, no NAT punching, no
+            account RemoteCode controls. The daemon long-polls; messages flow both
+            ways through Telegram's encrypted transport.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== -->
+  <!-- THE FOREMAN                                                       -->
+  <!-- ============================================================== -->
+  <section id="foreman" class="foreman" style="border-top:1px solid var(--rule);">
+    <div class="wrap">
+      <div class="section-num">04 · The Foreman</div>
+      <h2>The supervisor that <em>never punches out.</em></h2>
+      <p class="lede">
+        Every RemoteCode instance ships with one always-on agent — the Foreman. They
+        watch the fleet, review the work, surface what matters, and stay out of the
+        way. These are their laws.
+      </p>
+
+      <div class="laws">
+        <div class="law"><span class="n">L01</span><span class="t">Never modify a worker's code <em>without explicit authorization.</em></span></div>
+        <div class="law"><span class="n">L02</span><span class="t">Report any worker stuck more than <em>thirty minutes</em> without progress.</span></div>
+        <div class="law"><span class="n">L03</span><span class="t">Flag uncommitted changes <em>older than two hours.</em></span></div>
+        <div class="law"><span class="n">L04</span><span class="t">Send the operator a daily digest at <em>18:00 EET</em> by default.</span></div>
+        <div class="law"><span class="n">L05</span><span class="t">A Telegram message is never longer than <em>four pages</em> in one report.</span></div>
+        <div class="law"><span class="n">L06</span><span class="t">Cannot be killed by <em>/kill</em>. May be paused. Reboots with the daemon.</span></div>
+        <div class="law"><span class="n">L07</span><span class="t">Logs every action to <em>data/supervisor.log</em> with timestamps.</span></div>
+        <div class="law"><span class="n">L08</span><span class="t">Never reveals secrets or credentials <em>even when asked.</em></span></div>
+        <div class="law"><span class="n">L09</span><span class="t">Light review hourly. Full review daily. Portfolio summary <em>Sundays 09:00.</em></span></div>
+      </div>
+      <div class="foreman-foot">
+        Read the full canon → <strong>docs/SUPERVISOR.md</strong> · Coming with v0.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== -->
+  <!-- PRICING                                                           -->
+  <!-- ============================================================== -->
+  <section id="price">
+    <div class="wrap">
+      <div class="section-num">05 · Pricing</div>
+      <h2>You bring the model. <em>We bring the office.</em></h2>
+      <p class="section-lede">
+        Flat tool subscription. No LLM cost markup. Your Claude account, your
+        rate limits, your data.
+      </p>
+
+      <div class="price-grid">
+        <div class="tier">
+          <div class="tier-name">Solo</div>
+          <p class="tier-price">$19<span class="cycle">/mo</span></p>
+          <p class="tier-tagline">One PC. One phone. One operator.</p>
+          <ul class="tier-list">
+            <li>Up to 4 concurrent agents</li>
+            <li>The Foreman supervisor</li>
+            <li>Voice messages (Whisper)</li>
+            <li>Auto-start on boot</li>
+            <li>Telegram delivery</li>
+            <li>Community Discord</li>
+          </ul>
+          <div class="tier-cta">
+            <a href="#waitlist" class="btn ghost">Join waitlist</a>
+          </div>
+        </div>
+
+        <div class="tier recommended">
+          <div class="tier-name">Team</div>
+          <p class="tier-price">$49<span class="cycle">/mo</span></p>
+          <p class="tier-tagline">Up to 5 PCs. Shared inbox. Role-based agents.</p>
+          <ul class="tier-list">
+            <li>Unlimited concurrent agents</li>
+            <li>Multi-PC fleet management</li>
+            <li>Custom slash-commands</li>
+            <li>Agent templates library</li>
+            <li>Priority bug triage</li>
+            <li>Everything in Solo</li>
+          </ul>
+          <div class="tier-cta">
+            <a href="#waitlist" class="btn">Join waitlist</a>
+          </div>
+        </div>
+
+        <div class="tier">
+          <div class="tier-name">Agency</div>
+          <p class="tier-price">$199<span class="cycle">/mo</span></p>
+          <p class="tier-tagline">Multi-tenant. White-label. SSO.</p>
+          <ul class="tier-list">
+            <li>Unlimited PCs + operators</li>
+            <li>Per-client agent namespaces</li>
+            <li>White-label Telegram bot</li>
+            <li>SAML / OIDC SSO</li>
+            <li>SLA · 99.5% · 4h response</li>
+            <li>Everything in Team</li>
+          </ul>
+          <div class="tier-cta">
+            <a href="mailto:karolis@remotecode.io" class="btn ghost">Talk to a human</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== -->
+  <!-- FAQ                                                               -->
+  <!-- ============================================================== -->
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-num">06 · Specs</div>
+      <h2>The <em>fine print,</em> spoken plainly.</h2>
+
+      <div class="faq">
+        <details class="q">
+          <summary><span class="q-text">Do I need an API key from Anthropic?</span><span class="icon"></span></summary>
+          <div class="a">
+            No. RemoteCode never touches your API key. It uses the <code>claude</code>
+            CLI that's already authenticated against <em>your</em> Pro / Max / API
+            subscription. We can't see, store, or proxy your credentials — that's
+            the privacy moat.
+          </div>
+        </details>
+
+        <details class="q">
+          <summary><span class="q-text">What happens when my Claude session limit hits?</span><span class="icon"></span></summary>
+          <div class="a">
+            The daemon parses the rate-limit message the CLI emits, marks the agent
+            as <code>paused</code>, pings you on Telegram with the reset time, and
+            wakes the agent up when the window opens again. No babysitting required.
+          </div>
+        </details>
+
+        <details class="q">
+          <summary><span class="q-text">Can I run multiple agents on different projects?</span><span class="icon"></span></summary>
+          <div class="a">
+            That's the entire premise. Each agent has its own name, working directory,
+            history, and quota slice. <code>/new druka ~/projA</code>, <code>/new ecmr
+            ~/projB</code>, and they run in parallel. The Foreman watches all of them.
+          </div>
+        </details>
+
+        <details class="q">
+          <summary><span class="q-text">Does it work behind NAT / on residential internet?</span><span class="icon"></span></summary>
+          <div class="a">
+            Yes. The daemon long-polls Telegram's Bot API outbound — there are no
+            inbound ports to open. Works behind home routers, ISP CGNAT, corporate
+            firewalls, hotel WiFi.
+          </div>
+        </details>
+
+        <details class="q">
+          <summary><span class="q-text">Voice messages?</span><span class="icon"></span></summary>
+          <div class="a">
+            Send a Telegram voice note. The daemon transcribes it with OpenAI Whisper
+            (if you've set <code>OPENAI_API_KEY</code>) or local <code>whisper.cpp</code>
+            otherwise. The transcript becomes a <code>/run</code> to the default agent.
+          </div>
+        </details>
+
+        <details class="q">
+          <summary><span class="q-text">Does my PC need to stay on?</span><span class="icon"></span></summary>
+          <div class="a">
+            For agents to work, yes — but that's a feature. RemoteCode is for people
+            who keep their machine running and want it to <em>actually do something</em>
+            while they're not at it. SQLite-WAL means a crash or power blip doesn't
+            lose state. systemd / launchd / Windows-service registration means it
+            restarts automatically.
+          </div>
+        </details>
+
+        <details class="q">
+          <summary><span class="q-text">Where's the source?</span><span class="icon"></span></summary>
+          <div class="a">
+            <a href="https://github.com/Karolis332/remote-code" style="color:var(--ignition); text-decoration:underline;">github.com/Karolis332/remote-code</a> · open-core. The daemon is MIT. Paid
+            features (multi-PC, agency tier) live in a closed plugin.
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== -->
+  <!-- FINAL CTA                                                         -->
+  <!-- ============================================================== -->
+  <section class="final" id="waitlist">
+    <div class="wrap">
+      <div class="section-num" style="justify-content:center;">07 · Standby</div>
+      <h2>The fleet is <em>warming up.</em></h2>
+      <p>
+        v0 ships when the Foreman passes its own review. Join the waitlist for
+        first access, a beta key, and the install one-liner.
+      </p>
+      <form action="#" method="post" style="display:flex; gap:0.6rem; justify-content:center; flex-wrap:wrap;">
+        <input type="email" required placeholder="your@email" style="
+          font-family: var(--font-mono); font-size: 13px;
+          padding: 14px 16px; min-width: 280px;
+          background: var(--ink-2); border: 1px solid var(--rule);
+          color: var(--paper); outline: none;
+        ">
+        <button type="submit" class="btn">Standby for liftoff →</button>
+      </form>
+      <p style="font-size:0.85rem; color:var(--mute); margin-top:1.5rem;">
+        No newsletter. Just the launch ping. We delete the list after v0 GA.
+      </p>
+    </div>
+  </section>
+</main>
+
+<!-- ============================================================== -->
+<!-- FOOTER                                                            -->
+<!-- ============================================================== -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a href="#top" class="brand" style="color:var(--paper);"><span class="mark"></span>RemoteCode</a>
+        <p style="color:var(--mute); margin-top:0.8rem; font-family:var(--font-mono); font-size:11.5px; line-height:1.55; max-width: 38ch;">
+          An office of Claude Code agents on your PC, controlled from your phone.
+          A solo-operator project, transmitted from Vilnius.
+        </p>
+      </div>
+      <div>
+        <h5>Product</h5>
+        <ul>
+          <li><a href="#how">How it works</a></li>
+          <li><a href="#arch">Architecture</a></li>
+          <li><a href="#foreman">The Foreman</a></li>
+          <li><a href="#price">Pricing</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Source</h5>
+        <ul>
+          <li><a href="https://github.com/Karolis332/remote-code">GitHub</a></li>
+          <li><a href="https://github.com/Karolis332/remote-code/blob/main/docs/ARCHITECTURE.md">Architecture doc</a></li>
+          <li><a href="https://github.com/Karolis332/remote-code/issues">Issues</a></li>
+          <li><a href="https://github.com/Karolis332/remote-code/releases">Releases</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Build</h5>
+        <ul>
+          <li>v0.0.1 · pre-alpha</li>
+          <li>node ≥ 20</li>
+          <li>MIT (core)</li>
+          <li>BYOK · Anthropic</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="foot-bottom">
+      <span>© 2026 RemoteCode · <span class="coords">54.687°N 25.279°E</span></span>
+      <span>uplink stable · <span class="cursor">●</span> <span id="foot-clock">--:--</span></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Mission clock + console clock + footer clock
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function tick() {
+    const d = new Date();
+    const utc = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds()) + ' UTC';
+    const local = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    const localShort = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    document.getElementById('clock').textContent = utc;
+    const c = document.getElementById('console-clock'); if (c) c.textContent = local;
+    const f = document.getElementById('foot-clock'); if (f) f.textContent = localShort;
+  }
+  tick(); setInterval(tick, 1000);
+</script>
+</body>
+</html>
