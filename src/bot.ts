@@ -33,6 +33,7 @@ import {
 } from "./db/index.js";
 import { killAgent, runPrompt } from "./claude-runner.js";
 import { snapshot } from "./quota.js";
+import { type Intent, type NlpClient } from "./nlp.js";
 
 // ---------------------------------------------------------------------------
 // Reply keyboard (sticky bottom) + per-agent inline keyboards
@@ -89,6 +90,8 @@ export interface BotDeps {
   db: DB;
   config: Config;
   logger: Logger;
+  /** Optional NLP router. When undefined, free-text falls back to the soft hint. */
+  nlp?: NlpClient;
 }
 
 /** Telegram message hard cap. See https://core.telegram.org/bots/api#sendmessage */
@@ -456,7 +459,7 @@ export const handlers = {
       "`/pair <code>` — bind this chat (only needed once)",
       "`/agents` — list agents with action buttons",
       "`/new <name> <cwd>` — register a new agent",
-      "`/run <name> <prompt>` — dispatch a prompt",
+      "`/run <name> <prompt>` — dispatch a prompt (alias: `/send`)",
       "`/status` — daemon snapshot",
       "`/quota` — quota window",
       "`/kill <name>` — terminate an agent",
@@ -493,8 +496,72 @@ export const handlers = {
     agentInlineKeyboard,
     PENDING_PROMPTS,
     PENDING_TTL_MS,
+    dispatchIntent,
   },
 };
+
+// ---------------------------------------------------------------------------
+// NLP intent dispatch
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the matching command handler for a parsed NLP intent. Returns `true`
+ * if dispatched (caller should NOT show the soft hint), `false` if the
+ * intent was unknown.
+ */
+async function dispatchIntent(
+  deps: BotDeps,
+  ctx: HandlerCtx,
+  intent: Intent,
+): Promise<boolean> {
+  switch (intent.command) {
+    case "run": {
+      const agent = getAgentByName(deps.db, intent.agent);
+      if (!agent) {
+        await ctx.reply(`Unknown agent: \`${escapeMd(intent.agent)}\``, {
+          parse_mode: "Markdown",
+        });
+        return true;
+      }
+      const fake = Object.assign(ctx, {
+        args: [agent.name, intent.prompt],
+        payload: `${agent.name} ${intent.prompt}`,
+      }) as HandlerCtx;
+      await handlers.run(deps, fake);
+      return true;
+    }
+    case "kill": {
+      const fake = Object.assign(ctx, {
+        args: [intent.agent],
+        payload: intent.agent,
+      }) as HandlerCtx;
+      await handlers.kill(deps, fake);
+      return true;
+    }
+    case "new": {
+      const fake = Object.assign(ctx, {
+        args: [intent.name, intent.cwd],
+        payload: `${intent.name} ${intent.cwd}`,
+      }) as HandlerCtx;
+      await handlers.newAgent(deps, fake);
+      return true;
+    }
+    case "status":
+      await handlers.status(deps, ctx);
+      return true;
+    case "quota":
+      await handlers.quota(deps, ctx);
+      return true;
+    case "agents":
+      await handlers.agents(deps, ctx);
+      return true;
+    case "help":
+      await handlers.help(deps, ctx);
+      return true;
+    case "unknown":
+      return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Agent listing with per-row inline buttons
@@ -589,6 +656,7 @@ export function buildBot(deps: BotDeps): Telegraf {
   bot.command("agents", wrap("agents", handlers.agents));
   bot.command("new", wrap("new", handlers.newAgent));
   bot.command("run", wrap("run", handlers.run));
+  bot.command("send", wrap("run", handlers.run)); // alias: /send <name> <prompt>
   bot.command("status", wrap("status", handlers.status));
   bot.command("quota", wrap("quota", handlers.quota));
   bot.command("kill", wrap("kill", handlers.kill));
@@ -747,6 +815,20 @@ export function buildBot(deps: BotDeps): Telegraf {
     }
     if (pending && pending.expiresAt <= Date.now()) {
       PENDING_PROMPTS.delete(chatId);
+    }
+
+    // 3.5) NLP fallback — ask Claude to map free text to a command.
+    if (deps.nlp) {
+      const agentNames = listAgents(deps.db).map((a) => a.name);
+      try {
+        const intent = await deps.nlp.classify(text, agentNames);
+        if (await dispatchIntent(deps, ctx as HandlerCtx, intent)) return;
+      } catch (err) {
+        deps.logger.warn(
+          { err: String(err), text: text.slice(0, 80) },
+          "nlp dispatch crashed",
+        );
+      }
     }
 
     // 4) Soft hint — NOT the pairing message (chat is already authorized here).

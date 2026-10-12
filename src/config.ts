@@ -19,6 +19,10 @@ export const Config = z.object({
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error"])
     .default("info"),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  NLP_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
+  NLP_MODEL: z.string().optional(),
 });
 
 export type Config = z.infer<typeof Config>;

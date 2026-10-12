@@ -19,21 +19,23 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "telegraf": "^4.16.3",
+    "@anthropic-ai/sdk": "^0.98.0",
     "better-sqlite3": "^12.4.1",
-    "zod": "^4.4.1",
+    "dotenv": "^16.6.1",
     "execa": "^9.6.0",
+    "openai": "^6.39.0",
     "pino": "^9.13.0",
-    "dotenv": "^16.6.1"
+    "telegraf": "^4.16.3",
+    "zod": "^4.4.1"
   },
   "devDependencies": {
-    "@types/node": "^20.18.5",
     "@types/better-sqlite3": "^7.6.13",
-    "typescript": "^5.9.0",
-    "tsx": "^4.20.5",
+    "@types/node": "^20.18.5",
+    "eslint": "^9.39.0",
     "tsup": "^8.5.0",
-    "vitest": "^3.2.4",
-    "eslint": "^9.39.0"
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=20"
